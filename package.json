@@ -1,0 +1,35 @@
+{
+  "name": "specfirst-skill",
+  "version": "3.0.0",
+  "description": "Spec-driven development skill for PAI - systematic specification workflow with ISC-format tasks",
+  "type": "module",
+  "main": "phases/orchestrator.ts",
+  "scripts": {
+    "test": "bun test",
+    "test:unit": "bun test tests/unit",
+    "test:integration": "bun test tests/integration",
+    "test:platform": "bun test tests/platform",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "pai",
+    "specfirst",
+    "spec-driven-development",
+    "isc",
+    "opencode",
+    "claude-code"
+  ],
+  "author": "Steffen025",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Steffen025/specfirst-skill.git"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@linear/sdk": "^2.0.0"
+  }
+}
