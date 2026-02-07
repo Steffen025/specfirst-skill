@@ -161,6 +161,36 @@ bun gates/phase-completion.ts <feature-name> <phase-name>
 
 ---
 
+### 5. Doctorow Gate
+
+**File:** `gates/doctorow.ts`
+**Purpose:** Pre-release checklist inspired by Cory Doctorow's writing methodology
+**Runs:** Before feature completion (optional quality gate)
+
+**Note:** The Doctorow Gate is an independent implementation inspired by Cory Doctorow's 
+writing methodology. It is not derived from or based on any other project's implementation.
+
+**CLI Usage:**
+```bash
+# Interactive mode (prompts for each check)
+bun gates/doctorow.ts
+
+# Batch mode (auto-approve for CI/CD)
+const result = runDoctorowGateBatch();
+```
+
+**Checks:**
+- ✅ Failure testing - Have you tested what happens when this feature fails?
+- ✅ Assumption validation - Have you validated your key assumptions?
+- ✅ Rollback plan - Do you have a rollback plan?
+- ✅ Technical debt - Have you documented any shortcuts?
+
+**Modes:**
+- **Interactive:** Prompts user for yes/no/note on each check
+- **Batch:** Auto-approves all checks with logging (for automated pipelines)
+
+---
+
 ## Integration with Phases
 
 Gates integrate into phase workflows like this:
