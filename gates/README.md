@@ -6,7 +6,7 @@
 
 Gates are validation functions that run before/after phase execution to ensure:
 - Prerequisites exist (constitution, git repo)
-- Artifacts follow canonical format (ISC criteria, 8-word limit)
+- Artifacts follow canonical format (ISC criteria, 8-12 word limit)
 - Phase dependencies are satisfied (previous artifact exists)
 - Git commits mark phase completion
 
@@ -76,15 +76,15 @@ cat tasks.md | bun gates/validate-isc.ts
 
 **Checks:**
 
-#### ✅ Criterion Word Count (EXACTLY 8 words)
+#### ✅ Criterion Word Count (8-12 words)
 ```markdown
 # Valid (8 words)
 Webhook endpoint accepts POST with enrichment payload data
 
-# Invalid (9 words)
-Webhook endpoint accepts POST requests with enrichment payload data
+# Valid (10 words)
+Webhook endpoint accepts POST requests with enrichment payload data successfully
 
-# Invalid (3 words)
+# Invalid (3 words - too short)
 User auth works
 ```
 
@@ -105,12 +105,12 @@ User auth works
 
 **ISC TRACKER requires 4 columns:**
 ```markdown
-| # | Criterion | Status | Evidence |
+| ID | Criterion | Status | Evidence |
 ```
 
 **ANTI-CRITERIA requires 3 columns:**
 ```markdown
-| # | Criterion | Status |
+| ID | Criterion | Status |
 ```
 
 #### ✅ Required Sections
@@ -131,15 +131,15 @@ All tasks.md files MUST have:
 
 Found 2 error(s):
 
-  • Line 11: Criterion must be EXACTLY 8 words
+  • Line 11: Criterion must be 8-12 words
     Criterion: "User auth works"
-    Word count: 3 (expected 8)
+    Word count: 3 (expected 8-12)
     
   • Line 12: Invalid status symbol "DONE". Must be one of: ⬜, 🔄, ✅, ❌
     Criterion: "Database connection pool maintains exactly five active connections"
 
 ⚠️  Warnings:
-  Line 15: Criterion has 7 words (expected 8): "Error messages include timestamp and correlation request identifier"
+  Line 15: Criterion has 7 words (expected 8-12): "Error messages include timestamp and correlation request identifier"
 ```
 
 ---
@@ -158,36 +158,6 @@ bun gates/phase-completion.ts <feature-name> <phase-name>
 **Checks:**
 - ✅ Git commit exists with phase marker
 - ✅ Commit message follows convention: `SpecFirst: <phase> phase complete for <feature>`
-
----
-
-### 5. Doctorow Gate
-
-**File:** `gates/doctorow.ts`
-**Purpose:** Pre-release checklist inspired by Cory Doctorow's writing methodology
-**Runs:** Before feature completion (optional quality gate)
-
-**Note:** The Doctorow Gate is an independent implementation inspired by Cory Doctorow's 
-writing methodology. It is not derived from or based on any other project's implementation.
-
-**CLI Usage:**
-```bash
-# Interactive mode (prompts for each check)
-bun gates/doctorow.ts
-
-# Batch mode (auto-approve for CI/CD)
-const result = runDoctorowGateBatch();
-```
-
-**Checks:**
-- ✅ Failure testing - Have you tested what happens when this feature fails?
-- ✅ Assumption validation - Have you validated your key assumptions?
-- ✅ Rollback plan - Do you have a rollback plan?
-- ✅ Technical debt - Have you documented any shortcuts?
-
-**Modes:**
-- **Interactive:** Prompts user for yes/no/note on each check
-- **Batch:** Auto-approves all checks with logging (for automated pipelines)
 
 ---
 
@@ -249,21 +219,21 @@ bun gates/artifact.ts
 
 ## Common Issues
 
-### Issue: "Criterion must be EXACTLY 8 words"
+### Issue: "Criterion must be 8-12 words"
 
 **Problem:** Your criterion has too many or too few words.
 
-**Solution:** Rewrite to exactly 8 words while maintaining clarity.
+**Solution:** Rewrite to 8-12 words while maintaining clarity.
 
 ```markdown
 # Too short (3 words)
 ❌ User auth works
 
-# Too long (10 words)
-❌ User authentication endpoint responds with a valid JWT token successfully
-
 # Just right (8 words)
 ✅ User authentication endpoint responds with valid JWT token
+
+# Also valid (10 words)
+✅ User authentication endpoint responds with a valid JWT token successfully
 ```
 
 ### Issue: "Invalid status symbol"

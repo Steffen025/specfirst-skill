@@ -942,7 +942,7 @@ interface ImplementInput {
 
 interface ISCCriterion {
   id: number;
-  criterion: string;  // Exactly 8 words
+  criterion: string;  // 8-12 words
   status: "⬜" | "🔄" | "✅" | "❌";
   evidence?: string;
   phase?: string;
@@ -995,12 +995,12 @@ Extracts ISC criteria from plan.md automatically.
 
 #### `convertTo8Words(text)`
 
-Ensures text is exactly 8 words (for ISC compliance).
+Ensures text is 8-12 words (for ISC compliance).
 
 **Parameters:**
 - `text` - Input text
 
-**Returns:** `string` - 8-word version
+**Returns:** `string` - 8-12 word version
 
 ---
 
@@ -1180,7 +1180,7 @@ type ISCStatus = "⬜" | "🔄" | "✅" | "❌";
 
 interface ISCEntry {
   id: number;
-  criterion: string; // Exactly 8 words
+  criterion: string; // 8-12 words
   status: ISCStatus;
   evidence?: string;
   phase?: string;
@@ -1274,7 +1274,7 @@ Formats LoadedISC as Algorithm ISC tracker table.
 🎯 ISC TRACKER ═══════════════════════════════════════════════════════════
    IDEAL: Perfect ISC format with all criteria verified successfully.
 
-│ # │ Criterion (exactly 8 words)                          │ Status      │ Evidence       │
+│ ID │ Criterion (8-12 words)                               │ Status      │ Evidence       │
 ├───┼──────────────────────────────────────────────────────┼─────────────┼────────────────┤
 │  1 │ User authentication endpoint responds with valid JWT token │ ✅ VERIFIED  │ Test passed    │
 │  2 │ Database connection pool maintains exactly five active connections │ 🔄 IN_PROGRESS │ In progress    │
@@ -1407,7 +1407,7 @@ interface TasksArtifact {
 
 interface ISCCriterion {
   id: number;
-  criterion: string;  // Exactly 8 words
+  criterion: string;  // 8-12 words
   status: "⬜" | "🔄" | "✅" | "❌";
   evidence?: string;
   phase?: string;  // Implementation phase this belongs to

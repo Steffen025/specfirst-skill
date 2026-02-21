@@ -1,11 +1,13 @@
 /**
- * Tasks Artifact Generator - SpecFirst 3.0
+ * Tasks Artifact Generator - SpecFirst 4.0
  * 
  * Generates tasks.md artifacts in ISC (Ideal State Criteria) format.
  * Native ISC generation - no conversion layer (ADR-005).
+ * Updated for Algorithm v1.8.0: 8-12 word criteria, inline verification,
+ * ISC-C/ISC-A naming, confidence tags, priority classification.
  * 
  * @module artifacts/tasks
- * @version 3.0.0
+ * @version 4.0.0
  */
 
 import type { TasksArtifact, ISCCriterion, AntiCriterion } from "./types";
@@ -26,15 +28,17 @@ based_on: plan.md
 }
 
 /**
- * Validates that a criterion is exactly 8 words.
+ * Validates that a criterion is 8-12 words (Algorithm v1.8.0).
  * 
- * @param criterion - The criterion text
+ * @param criterion - The criterion text (may include `| Verify:` suffix which is excluded)
  * @returns Object with valid flag and word count
  */
 export function validateCriterionWordCount(criterion: string): { valid: boolean; wordCount: number } {
-  const words = criterion.trim().split(/\s+/).filter(w => w.length > 0);
+  // Strip inline verification suffix before counting words
+  const textOnly = criterion.split("|")[0].trim();
+  const words = textOnly.split(/\s+/).filter(w => w.length > 0);
   return {
-    valid: words.length === 8,
+    valid: words.length >= 8 && words.length <= 12,
     wordCount: words.length,
   };
 }
@@ -44,8 +48,17 @@ export function validateCriterionWordCount(criterion: string): { valid: boolean;
  */
 function generateCriteriaTable(criteria: ISCCriterion[], phaseGrouped: boolean = true): string {
   if (criteria.length === 0) {
-    return "| # | Criterion (exactly 8 words) | Status | Evidence |\n|---|----------------------------|--------|----------|\n| - | No criteria defined | - | - |";
+    return "| ID | Criterion (8-12 words) | Status | Evidence | Verify |\n|----|------------------------|--------|----------|--------|\n| - | No criteria defined | - | - | - |";
   }
+  
+  // Format a single criterion row with ISC-C naming and verify method
+  const formatRow = (c: ISCCriterion) => {
+    const id = typeof c.id === "number" ? `ISC-C${c.id}` : c.id;
+    const verify = c.verifyMethod || "-";
+    const conf = c.confidence ? ` [${c.confidence}]` : "";
+    const prio = c.priority ? ` [${c.priority}]` : "";
+    return `| ${id} | ${c.criterion}${conf}${prio} | ${c.status} | ${c.evidence || "-"} | ${verify} |`;
+  };
   
   // Group by phase if phase information is available
   if (phaseGrouped && criteria.some(c => c.phase)) {
@@ -53,19 +66,15 @@ function generateCriteriaTable(criteria: ISCCriterion[], phaseGrouped: boolean =
     
     return phases.map(phase => {
       const phaseCriteria = criteria.filter(c => c.phase === phase);
-      const header = `### ${phase}\n\n| # | Criterion (exactly 8 words) | Status | Evidence |\n|---|----------------------------|--------|----------|`;
-      const rows = phaseCriteria
-        .map(c => `| ${c.id} | ${c.criterion} | ${c.status} | ${c.evidence || "-"} |`)
-        .join("\n");
+      const header = `### ${phase}\n\n| ID | Criterion (8-12 words) | Status | Evidence | Verify |\n|----|------------------------|--------|----------|--------|`;
+      const rows = phaseCriteria.map(formatRow).join("\n");
       return `${header}\n${rows}`;
     }).join("\n\n");
   }
   
   // Flat table
-  const header = "| # | Criterion (exactly 8 words) | Status | Evidence |\n|---|----------------------------|--------|----------|";
-  const rows = criteria
-    .map(c => `| ${c.id} | ${c.criterion} | ${c.status} | ${c.evidence || "-"} |`)
-    .join("\n");
+  const header = "| ID | Criterion (8-12 words) | Status | Evidence | Verify |\n|----|------------------------|--------|----------|--------|";
+  const rows = criteria.map(formatRow).join("\n");
   
   return `${header}\n${rows}`;
 }
@@ -75,12 +84,16 @@ function generateCriteriaTable(criteria: ISCCriterion[], phaseGrouped: boolean =
  */
 function generateAntiCriteriaTable(antiCriteria: AntiCriterion[]): string {
   if (antiCriteria.length === 0) {
-    return "| # | Anti-Criterion | Status |\n|---|---------------|--------|\n| - | No anti-criteria defined | - |";
+    return "| ID | Anti-Criterion (8-12 words) | Status | Verify |\n|----|----------------------------|--------|--------|\n| - | No anti-criteria defined | - | - |";
   }
   
-  const header = "| # | Anti-Criterion | Status |\n|---|---------------|--------|";
+  const header = "| ID | Anti-Criterion (8-12 words) | Status | Verify |\n|----|----------------------------|--------|--------|";
   const rows = antiCriteria
-    .map(c => `| ${c.id} | ${c.criterion} | ${c.status} |`)
+    .map(c => {
+      const id = c.id.startsWith("ISC-A") ? c.id : `ISC-A${c.id.replace(/^A/, "")}`;
+      const verify = c.verifyMethod || "-";
+      return `| ${id} | ${c.criterion} | ${c.status} | ${verify} |`;
+    })
     .join("\n");
   
   return `${header}\n${rows}`;
@@ -159,53 +172,7 @@ ${progress}${parallelSection}${notesSection}
 
 ---
 
-*Generated by SpecFirst 3.0*
-`;
-}
-
-/**
- * Creates a minimal tasks template for user to fill in.
- */
-export function createTasksTemplate(featureName: string): string {
-  const frontmatter = generateFrontmatter(featureName);
-  
-  return `${frontmatter}
-
-# ${featureName} - Implementation Tasks
-
-## IDEAL
-
-[1-2 sentence description of the ideal outcome when all criteria are verified]
-
----
-
-## ISC TRACKER
-
-| # | Criterion (exactly 8 words) | Status | Evidence |
-|---|----------------------------|--------|----------|
-| 1 | [Testable state condition in 8 words] | ⬜ | - |
-| 2 | [Testable state condition in 8 words] | ⬜ | - |
-| 3 | [Testable state condition in 8 words] | ⬜ | - |
-
----
-
-## ANTI-CRITERIA
-
-| # | Anti-Criterion | Status |
-|---|---------------|--------|
-| A1 | [Failure mode to avoid] | 👀 |
-| A2 | [Another failure mode] | 👀 |
-
----
-
-## PROGRESS
-
-**Completed:** 0/3 verified
-**Status:** PENDING
-
----
-
-*Generated by SpecFirst 3.0*
+*Generated by SpecFirst 4.0*
 `;
 }
 
@@ -234,13 +201,13 @@ export function validateTasks(content: string): { valid: boolean; errors: string
     }
   }
   
-  // Validate ISC criteria format (8 words)
+  // Validate ISC criteria format (8-12 words, Algorithm v1.8.0)
   const lines = content.split("\n");
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     
-    // Check table rows (lines starting with |)
-    if (line.match(/^\|\s*\d+\s*\|/)) {
+    // Check table rows (lines starting with | followed by number or ISC-C/ISC-A)
+    if (line.match(/^\|\s*(\d+|ISC-[CA]\d+)\s*\|/)) {
       // Extract criterion text (second column)
       const columns = line.split("|").filter(c => c.trim());
       if (columns.length >= 2) {
@@ -253,7 +220,7 @@ export function validateTasks(content: string): { valid: boolean; errors: string
         
         const validation = validateCriterionWordCount(criterion);
         if (!validation.valid) {
-          errors.push(`Line ${i + 1}: Criterion has ${validation.wordCount} words (expected 8): "${criterion}"`);
+          errors.push(`Line ${i + 1}: Criterion has ${validation.wordCount} words (expected 8-12): "${criterion}"`);
         }
       }
     }
@@ -305,28 +272,32 @@ export function parseTasksFile(content: string): { criteria: ISCCriterion[]; ant
       continue;
     }
     
-    // Parse ISC criteria rows
-    if (inISCSection && line.match(/^\|\s*\d+\s*\|/)) {
+    // Parse ISC criteria rows (supports both numeric and ISC-C{N} format)
+    if (inISCSection && line.match(/^\|\s*(\d+|ISC-C\d+)\s*\|/)) {
       const columns = line.split("|").filter(c => c.trim());
       if (columns.length >= 3) {
-        const id = parseInt(columns[0].trim(), 10);
+        const rawId = columns[0].trim();
+        const id = rawId.startsWith("ISC-C") ? parseInt(rawId.replace("ISC-C", ""), 10) : parseInt(rawId, 10);
         const criterion = columns[1].trim();
         const status = columns[2].trim() as ISCCriterion["status"];
         const evidence = columns[3]?.trim() || undefined;
+        const verifyMethod = columns[4]?.trim() || undefined;
         
-        criteria.push({ id, criterion, status, evidence });
+        criteria.push({ id, criterion, status, evidence, verifyMethod });
       }
     }
     
-    // Parse anti-criteria rows
-    if (inAntiSection && line.match(/^\|\s*A\d+\s*\|/)) {
+    // Parse anti-criteria rows (supports both A{N} and ISC-A{N} format)
+    if (inAntiSection && line.match(/^\|\s*(A\d+|ISC-A\d+)\s*\|/)) {
       const columns = line.split("|").filter(c => c.trim());
       if (columns.length >= 2) {
-        const id = columns[0].trim();
+        const rawId = columns[0].trim();
+        const id = rawId.startsWith("ISC-A") ? rawId : `ISC-A${rawId.replace(/^A/, "")}`;
         const criterion = columns[1].trim();
         const status = columns[2]?.trim() as AntiCriterion["status"] || "👀";
+        const verifyMethod = columns[3]?.trim() || undefined;
         
-        antiCriteria.push({ id, criterion, status });
+        antiCriteria.push({ id, criterion, status, verifyMethod });
       }
     }
   }

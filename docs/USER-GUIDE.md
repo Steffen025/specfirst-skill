@@ -299,7 +299,7 @@ User: "Create a proposal for adding webhook support"
 
 **How It Works:**
 1. **Extract Criteria:** Reads plan.md and extracts acceptance criteria from implementation phases
-2. **Convert to 8-Word Format:** Ensures each criterion is exactly 8 words (ISC requirement)
+2. **Convert to 8-12 Word Format:** Ensures each criterion is 8-12 words (ISC requirement)
 3. **Generate Anti-Criteria:** Converts risks to anti-criteria (what must NOT happen)
 4. **Create tasks.md:** Structured ISC format with ⬜ 🔄 ✅ ❌ status symbols
 
@@ -423,7 +423,7 @@ Jeremy: "Running the Plan workflow in the SpecFirst skill..."
 Jeremy: "Running the Implement workflow in the SpecFirst skill..."
 
 [Extracts criteria from plan.md]
-[Converts to exactly 8-word ISC format]
+[Converts to 8-12 word ISC format]
 [Creates tasks.md with 12 criteria]
 [Git commit: "SpecFirst: implement phase complete for webhook-support"]
 
@@ -540,13 +540,13 @@ git commit -m "Initial commit"
 ```
 ❌ ISC format validation FAILED
 
-Line 42: Criterion must be EXACTLY 8 words
+Line 42: Criterion must be 8-12 words
   Criterion: "User auth works"
-  Word count: 3 (expected 8)
+  Word count: 3 (expected 8-12)
 ```
 
 **Solution:**
-Edit tasks.md and expand the criterion to exactly 8 words:
+Edit tasks.md and expand the criterion to 8-12 words:
 
 ```diff
 - | 1 | User auth works | ✅ | Test passed |
@@ -766,9 +766,9 @@ The constitution defines constraints for all features. Invest time upfront:
 - Define architectural boundaries
 - List integration requirements
 
-### 2. Use Exactly 8-Word Criteria
+### 2. Use 8-12 Word Criteria
 
-ISC criteria MUST be exactly 8 words. This forces precision:
+ISC criteria MUST be 8-12 words. This forces precision while allowing clarity:
 
 ❌ **Bad:** "Auth works"  
 ✅ **Good:** "User authentication endpoint responds with valid JWT token"

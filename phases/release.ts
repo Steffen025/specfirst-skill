@@ -18,6 +18,8 @@ import { parseTasksFile } from "../artifacts/tasks";
 import { getArtifactPath, ensureFeatureDirectories } from "../lib/config";
 import { createPhaseCommit, getFeatureCommits } from "../lib/git";
 import { artifactGate } from "../gates/artifact";
+import { runDoctorowGateBatch, runDoctorowGateInteractive } from "../gates/doctorow";
+import { initDatabase, getFeature, addFeature, updateFeaturePhase, updateFeatureStatus } from "../lib/database";
 
 /**
  * Input for the release phase.
@@ -27,6 +29,7 @@ export interface ReleaseInput {
   version: string;
   releaseDate?: string;
   additionalNotes?: string;
+  batchMode?: boolean; // If true, auto-approve Doctorow gate
 }
 
 /**
@@ -45,12 +48,13 @@ export interface PhaseResult {
  * 
  * Flow:
  * 1. Run artifact gate (checks all required artifacts exist)
- * 2. Parse tasks.md to get ISC criteria
- * 3. Verify ALL criteria have status ✅
- * 4. If not all complete, return error with count
- * 5. Generate release notes from all artifacts
- * 6. Write RELEASE.md
- * 7. Create git commit
+ * 2. Run Doctorow gate (pre-release checklist)
+ * 3. Parse tasks.md to get ISC criteria
+ * 4. Verify ALL criteria have status ✅
+ * 5. If not all complete, return error with count
+ * 6. Generate release notes from all artifacts
+ * 7. Write RELEASE.md
+ * 8. Create git commit
  * 
  * @param input - ReleaseInput with version and metadata
  * @returns PhaseResult indicating success/failure
@@ -73,7 +77,23 @@ export interface PhaseResult {
  */
 export async function releasePhase(input: ReleaseInput): Promise<PhaseResult> {
   try {
-    // 1. Run artifact gate (ensures all required artifacts exist)
+    // 1. Initialize database
+    console.log("💾 Initializing database...");
+    const projectPath = process.cwd();
+    initDatabase(projectPath);
+    
+    // 2. Get or create feature
+    let feature = getFeature(input.featureName);
+    if (!feature) {
+      addFeature({
+        id: input.featureName,
+        name: input.featureName,
+        description: "Release phase - completing feature",
+      });
+      feature = getFeature(input.featureName);
+    }
+    
+    // 3. Run artifact gate (ensures all required artifacts exist)
     const gateResult = await artifactGate("release", input.featureName);
     if (!gateResult.passed) {
       return {
@@ -82,12 +102,35 @@ export async function releasePhase(input: ReleaseInput): Promise<PhaseResult> {
       };
     }
 
-    // 2. Parse tasks.md to get ISC criteria
+    // 4. Run Doctorow gate (pre-release checklist)
+    const doctorowResult = input.batchMode
+      ? runDoctorowGateBatch()
+      : await runDoctorowGateInteractive();
+
+    if (!doctorowResult.passed) {
+      const failedChecks = doctorowResult.checks
+        .filter(c => !c.passed)
+        .map(c => `  - ${c.id}: ${c.question}`)
+        .join("\n");
+
+      return {
+        success: false,
+        error: `Doctorow gate failed: ${doctorowResult.checks.filter(c => !c.passed).length} check(s) not completed\n\n${failedChecks}\n\nAll checks must pass before release.`,
+      };
+    }
+
+    // Log Doctorow gate result
+    console.log(`\n🚪 Doctorow Gate: ${doctorowResult.mode} mode - ${doctorowResult.passed ? "PASSED" : "FAILED"}`);
+    if (doctorowResult.mode === "batch") {
+      console.log("   All checks auto-approved in batch mode");
+    }
+
+    // 5. Parse tasks.md to get ISC criteria
     const tasksPath = getArtifactPath(input.featureName, "tasks");
     const tasksContent = await readFile(tasksPath, "utf-8");
     const { criteria, antiCriteria } = parseTasksFile(tasksContent);
 
-    // 3. Verify ALL criteria have status ✅
+    // 6. Verify ALL criteria have status ✅
     const incomplete = criteria.filter(c => c.status !== "✅");
     
     if (incomplete.length > 0) {
@@ -115,7 +158,7 @@ export async function releasePhase(input: ReleaseInput): Promise<PhaseResult> {
       };
     }
 
-    // 4. Generate release notes from all artifacts
+    // 7. Generate release notes from all artifacts
     const releaseNotes = await generateReleaseNotes(
       input.featureName,
       input.version,
@@ -125,12 +168,18 @@ export async function releasePhase(input: ReleaseInput): Promise<PhaseResult> {
       input.additionalNotes
     );
 
-    // 5. Write RELEASE.md
+    // 8. Write RELEASE.md
     await ensureFeatureDirectories(input.featureName);
     const releasePath = `${getArtifactPath(input.featureName, "tasks").replace("/tasks.md", "")}/RELEASE.md`;
     await writeFile(releasePath, releaseNotes, "utf-8");
 
-    // 6. Create git commit
+    // 9. Update SQLite: phase and status to completed
+    console.log("💾 Updating database state...");
+    updateFeaturePhase(input.featureName, "release");
+    updateFeatureStatus(input.featureName, "completed");
+    console.log("✅ Feature marked as completed in database");
+
+    // 10. Create git commit (artifact only)
     const commitResult = await createPhaseCommit(
       "release",
       input.featureName,
@@ -398,17 +447,17 @@ All features implemented and verified.
 
 ## ISC TRACKER
 
-| # | Criterion (exactly 8 words) | Status | Evidence |
-|---|----------------------------|--------|----------|
-| 1 | Feature one is fully implemented and tested | ✅ | Tests pass |
-| 2 | Feature two is fully implemented and tested | 🔄 | In progress |
-| 3 | Feature three is fully implemented and tested | ⬜ | Not started |
+| ID | Criterion (8-12 words) | Verify | Status | Evidence |
+|----|------------------------|--------|--------|----------|
+| ISC-C1 | Feature one is fully implemented and tested | CLI: bun test | ✅ | Tests pass |
+| ISC-C2 | Feature two is fully implemented and tested | CLI: bun test | 🔄 | In progress |
+| ISC-C3 | Feature three is fully implemented and tested | CLI: bun test | ⬜ | Not started |
 
 ## ANTI-CRITERIA
 
-| # | Anti-Criterion | Status |
-|---|---------------|--------|
-| A1 | No credentials exposed | 👀 |
+| ID | Anti-Criterion | Verify | Status |
+|----|---------------|--------|--------|
+| ISC-A1 | No credentials exposed in repository | Grep: credentials | 👀 |
 `;
 
   const { criteria, antiCriteria } = parseTasksFile(mockTasksContent);

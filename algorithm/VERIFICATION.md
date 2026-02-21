@@ -6,7 +6,7 @@
 
 ## ISC Tracker
 
-| # | Criterion (exactly 8 words) | Status | Evidence |
+| ID | Criterion (8-12 words) | Status | Evidence |
 |---|----------------------------|--------|----------|
 | 46 | DETERMINED effort detection triggers SpecFirst capability activation | ✅ | effort-detector.ts self-test PASS |
 | 47 | SpecFirst executes within Algorithm PLAN BUILD phases | ✅ | phase-integration.ts self-test PASS |
@@ -143,7 +143,7 @@ Test 5: ISC Criterion Verification
 🎯 ISC TRACKER ═══════════════════════════════════════════════════════════
    IDEAL: Perfect ISC format with all criteria verified successfully.
 
-│ # │ Criterion (exactly 8 words)                          │ Status      │ Evidence       │
+│ ID │ Criterion (8-12 words)                               │ Status      │ Evidence       │
 ├───┼──────────────────────────────────────────────────────┼─────────────┼────────────────┤
 │  1 │ User authentication endpoint responds with valid JWT token │ ✅ VERIFIED  │ Test passed    │
 │  2 │ Database connection pool maintains exactly five active connections │ 🔄 IN_PROGRESS │ In progress    │

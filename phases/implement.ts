@@ -14,6 +14,7 @@ import { getArtifactPath, ensureFeatureDirectories } from "../lib/config";
 import { createPhaseCommit } from "../lib/git";
 import { artifactGate } from "../gates/artifact";
 import { validateISCFormat, formatValidationResult } from "../gates/isc-format";
+import { initDatabase, getFeature, addFeature, updateFeaturePhase, updateFeaturePaths, addCriterion } from "../lib/database";
 import type { ISCCriterion, AntiCriterion } from "../artifacts/types";
 
 export interface ImplementInput {
@@ -38,7 +39,7 @@ export interface PhaseResult {
  * 
  * Flow:
  * 1. Run artifact gate (checks plan.md exists)
- * 2. Validate all criteria are exactly 8 words
+ * 2. Validate all criteria are 8-12 words (Algorithm v1.8.0)
  * 3. Generate tasks.md content
  * 4. Validate ISC format
  * 5. Write to file
@@ -49,7 +50,23 @@ export async function implementPhase(input: ImplementInput): Promise<PhaseResult
   const { featureName, ideal, criteria, antiCriteria, parallelizationOpportunities, implementationNotes } = input;
   
   try {
-    // Step 1: Run artifact gate
+    // Step 1: Initialize database
+    console.log("💾 Initializing database...");
+    const projectPath = process.cwd();
+    initDatabase(projectPath);
+    
+    // Step 2: Get or create feature
+    let feature = getFeature(featureName);
+    if (!feature) {
+      addFeature({
+        id: featureName,
+        name: featureName,
+        description: ideal,
+      });
+      feature = getFeature(featureName);
+    }
+    
+    // Step 3: Run artifact gate
     console.log("🔍 Running artifact gate...");
     const gateResult = await artifactGate("implement", featureName);
     
@@ -60,15 +77,15 @@ export async function implementPhase(input: ImplementInput): Promise<PhaseResult
       };
     }
     
-    // Step 2: Validate all criteria are exactly 8 words
-    console.log("🔍 Validating criterion word counts...");
+    // Step 4: Validate all criteria are 8-12 words (Algorithm v1.8.0)
+    console.log("🔍 Validating criterion word counts (8-12 words)...");
     const wordCountErrors: string[] = [];
     
     for (const c of criteria) {
       const validation = validateCriterionWordCount(c.criterion);
       if (!validation.valid) {
         wordCountErrors.push(
-          `Criterion ${c.id}: "${c.criterion}" has ${validation.wordCount} words (expected 8)`
+          `Criterion ${c.id}: "${c.criterion}" has ${validation.wordCount} words (expected 8-12)`
         );
       }
     }
@@ -77,7 +94,7 @@ export async function implementPhase(input: ImplementInput): Promise<PhaseResult
       const validation = validateCriterionWordCount(ac.criterion);
       if (!validation.valid) {
         wordCountErrors.push(
-          `Anti-criterion ${ac.id}: "${ac.criterion}" has ${validation.wordCount} words (expected 8)`
+          `Anti-criterion ${ac.id}: "${ac.criterion}" has ${validation.wordCount} words (expected 8-12)`
         );
       }
     }
@@ -89,7 +106,7 @@ export async function implementPhase(input: ImplementInput): Promise<PhaseResult
       };
     }
     
-    // Step 3: Generate tasks.md content
+    // Step 5: Generate tasks.md content
     console.log("📝 Generating tasks.md...");
     const tasksContent = generateTasks(
       featureName,
@@ -100,7 +117,7 @@ export async function implementPhase(input: ImplementInput): Promise<PhaseResult
       implementationNotes
     );
     
-    // Step 4: Validate ISC format
+    // Step 6: Validate ISC format
     console.log("🔍 Validating ISC format...");
     const formatValidation = validateISCFormat(tasksContent);
     
@@ -112,14 +129,28 @@ export async function implementPhase(input: ImplementInput): Promise<PhaseResult
       };
     }
     
-    // Step 5: Write to file
+    // Step 7: Write to file
     const tasksPath = getArtifactPath(featureName, "tasks");
     await ensureFeatureDirectories(featureName);
     await writeFile(tasksPath, tasksContent, "utf-8");
     
     console.log(`✅ Created: ${tasksPath}`);
     
-    // Step 6: Create git commit
+    // Step 8: Store ISC criteria in database
+    console.log("💾 Storing ISC criteria in database...");
+    for (const c of criteria) {
+      addCriterion(featureName, c.criterion);
+    }
+    console.log(`✅ Stored ${criteria.length} criteria in database`);
+    
+    // Step 9: Update SQLite: phase and paths
+    console.log("💾 Updating database state...");
+    updateFeaturePhase(featureName, "implement");
+    updateFeaturePaths(featureName, {
+      tasksPath: tasksPath,
+    });
+    
+    // Step 10: Create git commit (artifact only)
     console.log("📦 Creating git commit...");
     const commitResult = await createPhaseCommit("implement", featureName, tasksPath);
     
@@ -130,7 +161,7 @@ export async function implementPhase(input: ImplementInput): Promise<PhaseResult
       console.log(`✅ Committed: ${commitResult.stdout}`);
     }
     
-    // Step 7: Build handoff message for Algorithm
+    // Step 11: Build handoff message for Algorithm
     const handoffMessage = buildHandoffMessage(featureName, criteria.length, tasksPath);
     
     return {
@@ -243,13 +274,13 @@ export async function extractCriteriaFromPlan(featureName: string): Promise<Impl
 }
 
 /**
- * Converts a criterion to exactly 8 words.
+ * Converts a criterion to 8-12 words (Algorithm v1.8.0).
  * 
  * This is a helper that attempts to intelligently truncate or expand
- * a criterion to meet the 8-word requirement.
+ * a criterion to meet the 8-12 word requirement.
  * 
  * @param text - Original criterion text
- * @returns 8-word criterion
+ * @returns 8-12 word criterion
  */
 function convertTo8Words(text: string): string {
   // Clean the text
@@ -261,13 +292,14 @@ function convertTo8Words(text: string): string {
   
   const words = cleaned.split(/\s+/);
   
-  if (words.length === 8) {
+  // Already in valid range (8-12 words)
+  if (words.length >= 8 && words.length <= 12) {
     return cleaned;
   }
   
-  if (words.length > 8) {
-    // Truncate to 8 words
-    return words.slice(0, 8).join(" ");
+  if (words.length > 12) {
+    // Truncate to 12 words
+    return words.slice(0, 12).join(" ");
   }
   
   // If less than 8 words, pad with context
@@ -278,7 +310,7 @@ function convertTo8Words(text: string): string {
     words.push(padding.shift()!);
   }
   
-  return words.slice(0, 8).join(" ");
+  return words.slice(0, 12).join(" ");
 }
 
 /**
@@ -313,7 +345,7 @@ export async function selfTest(): Promise<void> {
   const v3 = validateCriterionWordCount(invalidLong);
   
   console.assert(v1.valid === true, "8-word criterion should be valid");
-  console.assert(v1.wordCount === 8, "Should count 8 words");
+  console.assert(v1.wordCount === 8, "Should count 8 words (valid: 8 is within 8-12 range)");
   console.assert(v2.valid === false, "3-word criterion should be invalid");
   console.assert(v3.valid === false, "11-word criterion should be invalid");
   console.log("✅ Pass\n");

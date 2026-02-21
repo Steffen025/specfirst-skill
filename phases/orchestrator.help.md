@@ -391,7 +391,7 @@ bun cli/specfirst.ts propose my-feature
 
 ### "ISC format gate failed"
 
-**Problem:** tasks.md doesn't follow ISC format (exactly 8 words per criterion)
+**Problem:** tasks.md doesn't follow ISC format (8-12 words per criterion)
 
 **Solution:** Fix the criteria word count in tasks.md
 ```markdown

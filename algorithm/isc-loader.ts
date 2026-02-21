@@ -1,9 +1,11 @@
 #!/usr/bin/env bun
 /**
- * ISC Loader Module - SpecFirst 3.0
+ * ISC Loader Module - SpecFirst 4.0
  * 
  * Loads tasks.md ISC format into Algorithm ISC tracker format.
  * Converts SpecFirst criteria to Algorithm-compatible ISC tracker entries.
+ * Updated for Algorithm v1.8.0: 8-12 word criteria, inline verification,
+ * ISC-C/ISC-A naming, confidence tags, priority classification.
  * 
  * ISC Coverage:
  * - ISC #48: ISC format converter loads tasks into tracker
@@ -21,7 +23,7 @@
  * 4. SpecFirst updates tasks.md based on completed work
  * 
  * @module algorithm/isc-loader
- * @version 3.0.0
+ * @version 4.0.0
  */
 
 import { readFile } from "fs/promises";
@@ -30,18 +32,38 @@ import { parseTasksFile } from "../artifacts/tasks";
 
 export type ISCStatus = "⬜" | "🔄" | "✅" | "❌";
 
+/** Algorithm TaskCreate status equivalents */
+export type TaskStatus = "pending" | "in_progress" | "completed" | "failed";
+
+/** Map ISC status symbols to Algorithm TaskCreate statuses */
+export const STATUS_TO_TASK: Record<ISCStatus, TaskStatus> = {
+  "⬜": "pending",
+  "🔄": "in_progress",
+  "✅": "completed",
+  "❌": "failed",
+};
+
 export interface ISCEntry {
-  id: number;
-  criterion: string; // Exactly 8 words
+  id: number | string; // Numeric or ISC-C{N} format
+  criterion: string; // 8-12 words (Algorithm v1.8.0)
   status: ISCStatus;
+  taskStatus: TaskStatus; // Mapped Algorithm status
   evidence?: string;
   phase?: string; // Optional phase grouping
+  /** Inline verification method (Algorithm v1.8.0) */
+  verifyMethod?: string;
+  /** Confidence tag: [E]xplicit, [I]nferred, [R]everse-engineered */
+  confidence?: string;
+  /** Priority classification: CRITICAL, IMPORTANT, NICE */
+  priority?: string;
 }
 
 export interface AntiCriterionEntry {
-  id: string; // e.g., "A1", "A2"
-  criterion: string;
+  id: string; // ISC-A{N} format
+  criterion: string; // 8-12 words
   status: "👀" | "✅" | "❌";
+  /** Inline verification method */
+  verifyMethod?: string;
 }
 
 export interface LoadedISC {
@@ -100,19 +122,22 @@ export async function loadTasksIntoTracker(tasksPath: string): Promise<LoadedISC
   // Extract IDEAL section
   const ideal = extractIdeal(content);
   
-  // Convert to ISC tracker format
+  // Convert to ISC tracker format (v4.0 — includes TaskStatus mapping)
   const criteria: ISCEntry[] = rawCriteria.map(c => ({
     id: c.id,
     criterion: c.criterion,
     status: c.status as ISCStatus,
+    taskStatus: STATUS_TO_TASK[c.status as ISCStatus] || "pending",
     evidence: c.evidence,
     phase: c.phase,
+    verifyMethod: c.verifyMethod,
   }));
   
   const antiCriteria: AntiCriterionEntry[] = rawAntiCriteria.map(a => ({
     id: a.id,
     criterion: a.criterion,
     status: a.status,
+    verifyMethod: a.verifyMethod,
   }));
   
   // Calculate metadata
@@ -152,8 +177,10 @@ export function parseISCTable(content: string): ISCEntry[] {
     id: c.id,
     criterion: c.criterion,
     status: c.status as ISCStatus,
+    taskStatus: STATUS_TO_TASK[c.status as ISCStatus] || "pending",
     evidence: c.evidence,
     phase: c.phase,
+    verifyMethod: c.verifyMethod,
   }));
 }
 
@@ -217,12 +244,12 @@ function extractFeatureName(content: string, filePath: string): string {
 }
 
 /**
- * Validates that loaded ISC entries meet Algorithm requirements.
+ * Validates that loaded ISC entries meet Algorithm v1.8.0 requirements.
  * 
  * Checks:
- * - All criteria are exactly 8 words
+ * - All criteria are 8-12 words (v1.8.0 — was exactly 8)
  * - All criteria have valid status symbols
- * - Criteria IDs are sequential
+ * - Criteria IDs are sequential (supports both numeric and ISC-C format)
  * 
  * @param entries - ISC entries to validate
  * @returns Validation result with errors if any
@@ -232,12 +259,17 @@ export function validateLoadedISC(
 ): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
   
-  // Check word count for each criterion
+  // Check word count for each criterion (8-12 words, strip confidence/priority tags)
   for (const entry of entries) {
-    const words = entry.criterion.trim().split(/\s+/).filter(w => w.length > 0);
-    if (words.length !== 8) {
+    const clean = entry.criterion
+      .replace(/\s*\[(E|I|R)\]\s*/g, '')
+      .replace(/\s*\[(CRITICAL|IMPORTANT|NICE)\]\s*/g, '')
+      .split("|")[0] // Strip verify suffix if inline
+      .trim();
+    const words = clean.split(/\s+/).filter(w => w.length > 0);
+    if (words.length < 8 || words.length > 12) {
       errors.push(
-        `ISC #${entry.id}: Criterion has ${words.length} words (expected 8): "${entry.criterion}"`
+        `ISC #${entry.id}: Criterion has ${words.length} words (expected 8-12): "${entry.criterion}"`
       );
     }
   }
@@ -252,14 +284,19 @@ export function validateLoadedISC(
     }
   }
   
-  // Check ID sequence (should be 1, 2, 3, ...)
-  const expectedIds = Array.from({ length: entries.length }, (_, i) => i + 1);
-  const actualIds = entries.map(e => e.id).sort((a, b) => a - b);
+  // Check ID sequence (supports both numeric and ISC-C{N} format)
+  const numericIds = entries
+    .map(e => typeof e.id === "number" ? e.id : parseInt(String(e.id).replace(/^ISC-C/, ""), 10))
+    .filter(id => !isNaN(id))
+    .sort((a, b) => a - b);
   
-  if (JSON.stringify(expectedIds) !== JSON.stringify(actualIds)) {
-    errors.push(
-      `ISC IDs not sequential. Expected: ${expectedIds.join(", ")}. Got: ${actualIds.join(", ")}`
-    );
+  if (numericIds.length > 0) {
+    const expectedIds = Array.from({ length: numericIds.length }, (_, i) => numericIds[0] + i);
+    if (JSON.stringify(expectedIds) !== JSON.stringify(numericIds)) {
+      errors.push(
+        `ISC IDs not sequential. Expected: ${expectedIds.join(", ")}. Got: ${numericIds.join(", ")}`
+      );
+    }
   }
   
   return {
@@ -282,7 +319,7 @@ export function validateLoadedISC(
  * 
  * console.log(table);
  * // 🎯 ISC TRACKER ══════════════════════════════════════════════════════
- * // │ # │ Criterion (exactly 8 words)        │ Status      │ Evidence   │
+ * // │ ID │ Criterion (8-12 words)        │ Status      │ Evidence   │
  * // ├───┼────────────────────────────────────┼─────────────┼────────────┤
  * // │ 1 │ User authentication endpoint...    │ ✅ VERIFIED │ Test pass  │
  * // ...
@@ -300,37 +337,41 @@ export function formatAsAlgorithmTracker(loadedISC: LoadedISC): string {
     lines.push("");
   }
   
-  // Table header
-  lines.push("│ # │ Criterion (exactly 8 words)                          │ Status      │ Evidence       │");
-  lines.push("├───┼──────────────────────────────────────────────────────┼─────────────┼────────────────┤");
+  // Table header (v4.0 — ISC-C naming, 8-12 words, Verify column)
+  lines.push("│ ID       │ Criterion (8-12 words)                               │ Status      │ Evidence       │ Verify         │");
+  lines.push("├──────────┼──────────────────────────────────────────────────────┼─────────────┼────────────────┼────────────────┤");
   
   // Criteria rows
   for (const entry of loadedISC.criteria) {
     const statusText = {
       "⬜": "⬜ PENDING",
       "🔄": "🔄 IN_PROGRESS",
-      "✅": "✅ VERIFIED",
+      "✅": "✅ COMPLETED",
       "❌": "❌ FAILED",
     }[entry.status] || entry.status;
     
+    const id = typeof entry.id === "number" ? `ISC-C${entry.id}` : String(entry.id);
     const evidence = entry.evidence || "-";
+    const verify = entry.verifyMethod || "-";
     const criterion = entry.criterion.padEnd(52);
     
-    lines.push(`│ ${String(entry.id).padStart(2)} │ ${criterion} │ ${statusText.padEnd(11)} │ ${evidence.padEnd(14)} │`);
+    lines.push(`│ ${id.padEnd(8)} │ ${criterion} │ ${statusText.padEnd(11)} │ ${evidence.padEnd(14)} │ ${verify.padEnd(14)} │`);
   }
   
   // Footer
-  lines.push("└───┴──────────────────────────────────────────────────────┴─────────────┴────────────────┘");
+  lines.push("└──────────┴──────────────────────────────────────────────────────┴─────────────┴────────────────┴────────────────┘");
   
   // Progress
   lines.push(`   SCORE: ${loadedISC.metadata.completedCriteria}/${loadedISC.metadata.totalCriteria} verified │ PROGRESS: ${loadedISC.metadata.progressPercent}%`);
   
-  // Anti-criteria if present
+  // Anti-criteria if present (v4.0 — ISC-A naming)
   if (loadedISC.antiCriteria.length > 0) {
     lines.push("");
     lines.push("⚠️ ANTI-CRITERIA ═════════════════════════════════════════════════════════");
     for (const anti of loadedISC.antiCriteria) {
-      lines.push(`│ ${anti.id} │ ${anti.criterion.padEnd(52)} │ ${anti.status} │`);
+      const id = anti.id.startsWith("ISC-A") ? anti.id : `ISC-A${anti.id.replace(/^A/, "")}`;
+      const verify = anti.verifyMethod || "-";
+      lines.push(`│ ${id.padEnd(8)} │ ${anti.criterion.padEnd(52)} │ ${anti.status} │ ${verify.padEnd(14)} │`);
     }
     lines.push("══════════════════════════════════════════════════════════════════════════");
   }
@@ -368,11 +409,11 @@ Perfect ISC format with all criteria verified successfully.
 
 ## ISC TRACKER
 
-| # | Criterion (exactly 8 words) | Status | Evidence |
-|---|----------------------------|--------|----------|
-| 1 | User authentication endpoint responds with valid JWT token | ✅ | Test passed |
-| 2 | Database connection pool maintains exactly five active connections | 🔄 | In progress |
-| 3 | Error messages include timestamp and correlation request identifier | ⬜ | Not started |
+| ID | Criterion (8-12 words) | Status | Evidence | Verify |
+|----|------------------------|--------|----------|--------|
+| ISC-C1 | User authentication endpoint responds with valid JWT token | ✅ | Test passed | Test: auth.test.ts |
+| ISC-C2 | Database connection pool maintains exactly five active connections | 🔄 | In progress | CLI: check-pool |
+| ISC-C3 | Error messages include timestamp and correlation request identifier | ⬜ | Not started | Grep: error-format |
 
 ---
 
@@ -380,7 +421,7 @@ Perfect ISC format with all criteria verified successfully.
 
 | # | Anti-Criterion | Status |
 |---|---------------|--------|
-| A1 | No credentials exposed in git commit history today | 👀 | Watching |
+| ISC-A1 | No credentials exposed in git commit history today | 👀 | Grep: secrets |
 
 ---
 
@@ -440,7 +481,7 @@ Perfect ISC format with all criteria verified successfully.
   console.log("Test 6: Format as Algorithm ISC tracker");
   const loadedISC: LoadedISC = {
     criteria: entries,
-    antiCriteria: [{ id: "A1", criterion: "No credentials exposed in git commit history today", status: "👀" }],
+    antiCriteria: [{ id: "ISC-A1", criterion: "No credentials exposed in git commit history today", status: "👀" }],
     ideal,
     metadata: {
       featureName: "test-feature",
@@ -461,8 +502,8 @@ Perfect ISC format with all criteria verified successfully.
   // Test 7: Invalid ISC (wrong word count)
   console.log("Test 7: Detect invalid criteria");
   const invalidEntries: ISCEntry[] = [
-    { id: 1, criterion: "Too short", status: "⬜" },
-    { id: 2, criterion: "User authentication endpoint responds with valid JWT token", status: "✅" },
+    { id: 1, criterion: "Too short", status: "⬜", taskStatus: "pending" },
+    { id: 2, criterion: "User authentication endpoint responds with valid JWT token", status: "✅", taskStatus: "completed" },
   ];
   
   const invalidValidation = validateLoadedISC(invalidEntries);

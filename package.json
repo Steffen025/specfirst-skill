@@ -29,7 +29,5 @@
     "@types/bun": "latest",
     "typescript": "^5.0.0"
   },
-  "dependencies": {
-    "@linear/sdk": "^2.0.0"
-  }
+  "dependencies": {}
 }

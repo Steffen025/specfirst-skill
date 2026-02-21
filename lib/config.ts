@@ -22,11 +22,6 @@ export interface SpecFirstConfig {
   // Feature development paths (dynamic per feature)
   getFeaturePaths: (featureName: string) => FeaturePaths;
   
-  // Linear integration
-  linearApiToken: string | undefined;
-  linearTeamId: string | undefined;
-  linearEnabled: boolean;
-  
   // Git configuration
   gitAutoCommit: boolean;
   gitBranch: string | undefined;
@@ -88,11 +83,6 @@ export function getConfig(): SpecFirstConfig {
     // Feature paths factory
     getFeaturePaths: createFeaturePaths,
     
-    // Linear integration
-    linearApiToken: process.env.LINEAR_API_TOKEN,
-    linearTeamId: process.env.LINEAR_TEAM_ID,
-    linearEnabled: Boolean(process.env.LINEAR_API_TOKEN),
-    
     // Git configuration
     gitAutoCommit: process.env.SPECFIRST_AUTO_COMMIT !== "false",
     gitBranch: process.env.SPECFIRST_BRANCH,
@@ -116,11 +106,6 @@ export function validateEnvironment(): { valid: boolean; missing: string[] } {
   const platform = getPlatformInfo();
   if (platform.platform === "unknown") {
     missing.push("Platform detection (OPENCODE_DIR or PAI_DIR or ~/.opencode or ~/.claude)");
-  }
-  
-  // Linear is optional but logged if missing
-  if (!process.env.LINEAR_API_TOKEN) {
-    console.warn("LINEAR_API_TOKEN not set - Linear integration disabled");
   }
   
   return {

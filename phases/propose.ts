@@ -18,6 +18,7 @@ import { generateProposal, createProposalTemplate } from "../artifacts/proposal"
 import { getArtifactPath, ensureFeatureDirectories } from "../lib/config";
 import { createPhaseCommit } from "../lib/git";
 import { prerequisiteGate } from "../gates/prerequisite";
+import { initDatabase, getFeature, addFeature, updateFeaturePhase, updateFeaturePaths, updateFeatureStatus } from "../lib/database";
 import type { SolutionApproach } from "../artifacts/types";
 
 /**
@@ -84,7 +85,25 @@ export interface PhaseResult {
  */
 export async function proposePhase(input: ProposeInput): Promise<PhaseResult> {
   try {
-    // 1. Run prerequisite gate
+    // 1. Initialize database
+    const projectPath = process.cwd();
+    initDatabase(projectPath);
+    
+    // 2. Get or create feature
+    let feature = getFeature(input.featureName);
+    if (!feature) {
+      addFeature({
+        id: input.featureName,
+        name: input.featureName,
+        description: input.problemStatement,
+      });
+      feature = getFeature(input.featureName);
+    }
+    
+    // 3. Update status to in_progress
+    updateFeatureStatus(input.featureName, "in_progress");
+    
+    // 4. Run prerequisite gate
     const gateResult = await prerequisiteGate(input.featureName);
     if (!gateResult.passed) {
       return {
@@ -93,10 +112,10 @@ export async function proposePhase(input: ProposeInput): Promise<PhaseResult> {
       };
     }
 
-    // 2. Ensure directories exist
+    // 5. Ensure directories exist
     await ensureFeatureDirectories(input.featureName);
 
-    // 3. Generate proposal content
+    // 6. Generate proposal content
     const proposalContent = generateProposal(
       input.featureName,
       input.problemStatement,
@@ -106,11 +125,17 @@ export async function proposePhase(input: ProposeInput): Promise<PhaseResult> {
       input.openQuestions || []
     );
 
-    // 4. Write to file
+    // 7. Write to file
     const artifactPath = getArtifactPath(input.featureName, "proposal");
     await writeFile(artifactPath, proposalContent, "utf-8");
 
-    // 5. Create git commit
+    // 8. Update SQLite: phase and paths
+    updateFeaturePhase(input.featureName, "propose");
+    updateFeaturePaths(input.featureName, {
+      proposalPath: artifactPath,
+    });
+
+    // 9. Create git commit (artifact only)
     const commitResult = await createPhaseCommit(
       "propose",
       input.featureName,
@@ -168,7 +193,22 @@ export async function proposePhase(input: ProposeInput): Promise<PhaseResult> {
  */
 export async function createProposalInteractive(featureName: string): Promise<PhaseResult> {
   try {
-    // 1. Run prerequisite gate
+    // 1. Initialize database
+    const projectPath = process.cwd();
+    initDatabase(projectPath);
+    
+    // 2. Get or create feature
+    let feature = getFeature(featureName);
+    if (!feature) {
+      addFeature({
+        id: featureName,
+        name: featureName,
+        description: "Interactive proposal - description pending",
+      });
+      feature = getFeature(featureName);
+    }
+    
+    // 3. Run prerequisite gate
     const gateResult = await prerequisiteGate(featureName);
     if (!gateResult.passed) {
       return {
@@ -177,17 +217,22 @@ export async function createProposalInteractive(featureName: string): Promise<Ph
       };
     }
 
-    // 2. Ensure directories exist
+    // 4. Ensure directories exist
     await ensureFeatureDirectories(featureName);
 
-    // 3. Generate template content
+    // 5. Generate template content
     const templateContent = createProposalTemplate(featureName);
 
-    // 4. Write to file
+    // 6. Write to file
     const artifactPath = getArtifactPath(featureName, "proposal");
     await writeFile(artifactPath, templateContent, "utf-8");
+    
+    // 7. Update SQLite paths
+    updateFeaturePaths(featureName, {
+      proposalPath: artifactPath,
+    });
 
-    // 5. Skip git commit - user will commit after filling in
+    // 8. Skip git commit - user will commit after filling in
     return {
       success: true,
       artifactPath,

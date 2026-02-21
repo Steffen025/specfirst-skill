@@ -31,8 +31,32 @@ import { isPhaseComplete } from "../lib/git";
 import { getArtifactPath } from "../lib/config";
 import { existsSync } from "fs";
 import { readFile } from "fs/promises";
+import { detectEffortFromFlags, type EffortFlags } from "../algorithm/effort-detector";
+import { 
+  initDatabase, 
+  getFeature, 
+  getFeatures,
+  createSession, 
+  getSession,
+  getCurrentSession,
+  claimFeature, 
+  releaseFeature,
+  endSession,
+  type Feature,
+  getStats,
+  type FeatureStats 
+} from "../lib/database";
 
-export type Phase = "propose" | "specify" | "plan" | "implement" | "release";
+export type Phase = "none" | "propose" | "specify" | "plan" | "implement" | "release";
+
+export interface OrchestratorOptions {
+  /** v3.1: Explicit effort control flags */
+  quick?: boolean;
+  batch?: boolean;
+  thorough?: boolean;
+  /** Project path for database initialization */
+  projectPath?: string;
+}
 
 export interface OrchestratorResult {
   success: boolean;
@@ -41,6 +65,10 @@ export interface OrchestratorResult {
   artifactPath?: string;
   error?: string;
   nextPhase?: Phase;
+  /** v3.1: Detected effort level */
+  effortLevel?: string;
+  /** v3.2: Status message for user display */
+  message?: string;
 }
 
 /**
@@ -78,35 +106,58 @@ const PHASE_ARTIFACT_DEPS: Record<Phase, Phase | null> = {
  * 
  * This is the main entry point for phase execution. It:
  * 1. Validates the phase name
- * 2. Runs all required gates for the phase
- * 3. Routes to the correct phase function
- * 4. Returns result with next phase suggestion
+ * 2. Detects effort level from flags (v3.1)
+ * 3. Runs all required gates for the phase
+ * 4. Routes to the correct phase function
+ * 5. Returns result with next phase suggestion
  * 
  * @param phase - Phase to execute (propose, specify, plan, implement, release)
  * @param featureName - Feature name
  * @param input - Phase-specific input data
+ * @param options - Execution options (v3.1: includes --quick, --batch, --thorough flags)
  * @returns OrchestratorResult with execution status and next phase
  * 
  * @example
  * ```typescript
- * const result = await executePhase("propose", "user-auth", {
- *   featureName: "user-auth",
- *   problemStatement: "Need authentication system",
- *   solutionApproaches: [...],
- *   recommendedApproach: "JWT-based auth"
- * });
+ * // Standard interactive mode (default)
+ * const result = await executePhase("propose", "user-auth", inputData);
+ * 
+ * // Quick mode (minimal effort)
+ * const quickResult = await executePhase("propose", "user-auth", inputData, { quick: true });
+ * 
+ * // Batch mode (non-interactive, for Cedars)
+ * const batchResult = await executePhase("propose", "user-auth", inputData, { batch: true });
  * 
  * if (result.success) {
  *   console.log(`Phase complete. Next: ${result.nextPhase}`);
+ *   console.log(`Effort level: ${result.effortLevel}`);
  * }
  * ```
  */
 export async function executePhase(
   phase: Phase,
   featureName: string,
-  input?: unknown
+  input?: unknown,
+  options?: OrchestratorOptions
 ): Promise<OrchestratorResult> {
+  const projectPath = options?.projectPath || process.cwd();
   const gatesPassed: string[] = [];
+  
+  // Initialize database (idempotent)
+  initDatabase(projectPath);
+  
+  // v3.1: Detect effort level from flags
+  const effortFlags: EffortFlags = {
+    quick: options?.quick,
+    batch: options?.batch,
+    thorough: options?.thorough,
+  };
+  const effortDetection = detectEffortFromFlags(effortFlags);
+  
+  // Log effort detection for debugging
+  if (effortDetection.source === "explicit-flag") {
+    console.log(`[SpecFirst] Effort mode: ${effortDetection.effortLevel} (${effortDetection.reason})`);
+  }
   
   // 1. Validate phase name
   if (!PHASE_SEQUENCE.includes(phase)) {
@@ -239,6 +290,7 @@ export async function executePhase(
     artifactPath: phaseResult.artifactPath,
     error: phaseResult.error,
     nextPhase,
+    effortLevel: effortDetection.effortLevel,
   };
 }
 
@@ -351,6 +403,185 @@ export async function getWorkflowStatus(
   }
   
   return status;
+}
+
+/**
+ * Start a new SpecFirst session.
+ * Used by Cedars when spawning a new session.
+ * 
+ * @param projectPath - Project root path
+ * @returns Session ID
+ * 
+ * @example
+ * ```typescript
+ * const sessionId = await startSession("/path/to/project");
+ * console.log(`Session started: ${sessionId}`);
+ * ```
+ */
+export async function startSession(projectPath: string): Promise<string> {
+  initDatabase(projectPath);
+  const sessionId = createSession();
+  return sessionId;
+}
+
+/**
+ * Resume existing session or start new one.
+ * Cold-start capable - reads state from SQLite.
+ * 
+ * ISC #7: Cold-start resume works from SQLite state alone
+ * 
+ * @param projectPath - Project root path
+ * @returns Session info with current state
+ * 
+ * @example
+ * ```typescript
+ * const { sessionId, resumed, currentFeature } = await resumeOrStartSession("/path/to/project");
+ * if (resumed) {
+ *   console.log(`Resumed session ${sessionId}`);
+ *   if (currentFeature) {
+ *     console.log(`Working on: ${currentFeature.name} (${currentFeature.phase})`);
+ *   }
+ * }
+ * ```
+ */
+export async function resumeOrStartSession(projectPath: string): Promise<{
+  sessionId: string;
+  resumed: boolean;
+  currentFeature: Feature | null;
+  currentPhase: Phase | null;
+}> {
+  initDatabase(projectPath);
+  
+  // Check for running session
+  const existingSession = getCurrentSession();
+  if (existingSession && existingSession.status === 'running') {
+    const feature = existingSession.currentFeatureId 
+      ? getFeature(existingSession.currentFeatureId)
+      : null;
+    return {
+      sessionId: existingSession.id,
+      resumed: true,
+      currentFeature: feature,
+      currentPhase: feature?.phase || null,
+    };
+  }
+  
+  // Start new session
+  const sessionId = createSession();
+  return {
+    sessionId,
+    resumed: false,
+    currentFeature: null,
+    currentPhase: null,
+  };
+}
+
+/**
+ * Resume work on a feature from its last known state.
+ * Reads state from SQLite - no git required.
+ * 
+ * ISC #7: Cold-start resume works from SQLite state alone
+ * 
+ * @param featureName - Feature to resume
+ * @param projectPath - Project root path
+ * @param options - Execution options
+ * @returns Orchestrator result with next phase executed
+ * 
+ * @example
+ * ```typescript
+ * const result = await resumeFeature("user-auth", "/path/to/project");
+ * if (result.success) {
+ *   console.log(`Completed ${result.phase} phase`);
+ * }
+ * ```
+ */
+export async function resumeFeature(
+  featureName: string,
+  projectPath: string,
+  options?: OrchestratorOptions
+): Promise<OrchestratorResult> {
+  initDatabase(projectPath);
+  
+  const feature = getFeature(featureName);
+  if (!feature) {
+    return {
+      success: false,
+      phase: 'none',
+      gatesPassed: [],
+      message: `Feature '${featureName}' not found. Use 'specfirst propose ${featureName}' to start.`,
+    };
+  }
+  
+  // Determine next phase based on current phase
+  const nextPhase = getNextPhase(feature.phase);
+  if (!nextPhase) {
+    return {
+      success: true,
+      phase: feature.phase,
+      gatesPassed: [],
+      message: `Feature '${featureName}' is already complete (phase: ${feature.phase}).`,
+    };
+  }
+  
+  // Execute next phase
+  return executePhase(nextPhase, featureName, undefined, { ...options, projectPath });
+}
+
+/**
+ * Get next phase in sequence based on current phase.
+ * 
+ * @param currentPhase - Current phase
+ * @returns Next phase, or null if complete
+ */
+function getNextPhase(currentPhase: Phase): Phase | null {
+  const phaseOrder: Phase[] = ['none', 'propose', 'specify', 'plan', 'implement', 'release'];
+  const currentIndex = phaseOrder.indexOf(currentPhase);
+  
+  if (currentIndex === -1 || currentIndex >= phaseOrder.length - 1) {
+    return null; // Already at release or unknown
+  }
+  
+  return phaseOrder[currentIndex + 1];
+}
+
+/**
+ * Get all features with their current state.
+ * Useful for dashboard/TUI display.
+ * 
+ * @param projectPath - Project root path
+ * @returns Array of all features
+ * 
+ * @example
+ * ```typescript
+ * const features = listFeatures("/path/to/project");
+ * for (const feature of features) {
+ *   console.log(`${feature.name}: ${feature.phase} (${feature.status})`);
+ * }
+ * ```
+ */
+export function listFeatures(projectPath: string): Feature[] {
+  initDatabase(projectPath);
+  return getFeatures();
+}
+
+/**
+ * Get feature statistics.
+ * Useful for dashboard overview.
+ * 
+ * @param projectPath - Project root path
+ * @returns Feature statistics
+ * 
+ * @example
+ * ```typescript
+ * const stats = getFeatureStats("/path/to/project");
+ * console.log(`Total: ${stats.total}`);
+ * console.log(`Active: ${stats.byStatus.active}`);
+ * console.log(`Complete: ${stats.byPhase.release}`);
+ * ```
+ */
+export function getFeatureStats(projectPath: string): FeatureStats {
+  initDatabase(projectPath);
+  return getStats();
 }
 
 // Self-test when run directly with: bun phases/orchestrator.ts

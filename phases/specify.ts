@@ -14,6 +14,7 @@ import { generateSpec, createSpecTemplate } from "../artifacts/spec";
 import { getArtifactPath, ensureFeatureDirectories } from "../lib/config";
 import { createPhaseCommit } from "../lib/git";
 import { artifactGate } from "../gates/artifact";
+import { initDatabase, getFeature, addFeature, updateFeaturePhase, updateFeaturePaths } from "../lib/database";
 
 /**
  * Input for the Specify phase.
@@ -46,7 +47,7 @@ export interface SpecifyInput {
     verificationMethod: string;
   }>;
   architectureDiagram?: string;  // ASCII + Mermaid
-  milestone?: string;  // Linear milestone
+  milestone?: string;  // Optional milestone reference
 }
 
 /**
@@ -96,7 +97,23 @@ export interface PhaseResult {
 export async function specifyPhase(input: SpecifyInput): Promise<PhaseResult> {
   const { featureName } = input;
   
-  // 1. Run artifact gate (checks proposal exists)
+  // 1. Initialize database
+  console.log("💾 Initializing database...");
+  const projectPath = process.cwd();
+  initDatabase(projectPath);
+  
+  // 2. Get or create feature
+  let feature = getFeature(featureName);
+  if (!feature) {
+    addFeature({
+      id: featureName,
+      name: featureName,
+      description: "Specify phase - description from proposal",
+    });
+    feature = getFeature(featureName);
+  }
+  
+  // 3. Run artifact gate (checks proposal exists)
   console.log("🔍 Running artifact gate...");
   const gateResult = await artifactGate("specify", featureName);
   
@@ -108,11 +125,11 @@ export async function specifyPhase(input: SpecifyInput): Promise<PhaseResult> {
     };
   }
   
-  // 2. Ensure feature directories exist
+  // 4. Ensure feature directories exist
   console.log("📁 Ensuring feature directories exist...");
   await ensureFeatureDirectories(featureName);
   
-  // 3. Read proposal.md for context
+  // 5. Read proposal.md for context
   const proposalPath = getArtifactPath(featureName, "proposal");
   console.log(`📖 Reading proposal from ${proposalPath}...`);
   
@@ -126,7 +143,7 @@ export async function specifyPhase(input: SpecifyInput): Promise<PhaseResult> {
     };
   }
   
-  // 4. Generate spec content
+  // 6. Generate spec content
   console.log("⚙️  Generating spec content...");
   const specContent = generateSpec(
     featureName,
@@ -138,7 +155,7 @@ export async function specifyPhase(input: SpecifyInput): Promise<PhaseResult> {
     input.milestone
   );
   
-  // 5. Write to file
+  // 7. Write to file
   const specPath = getArtifactPath(featureName, "spec");
   console.log(`💾 Writing spec to ${specPath}...`);
   
@@ -151,7 +168,14 @@ export async function specifyPhase(input: SpecifyInput): Promise<PhaseResult> {
     };
   }
   
-  // 6. Create git commit (if in git repo)
+  // 8. Update SQLite: phase and paths
+  console.log("💾 Updating database state...");
+  updateFeaturePhase(featureName, "specify");
+  updateFeaturePaths(featureName, {
+    specPath: specPath,
+  });
+  
+  // 9. Create git commit (artifact only)
   console.log("📝 Creating git commit...");
   const gitResult = await createPhaseCommit("specify", featureName, specPath);
   
@@ -178,7 +202,22 @@ export async function specifyPhase(input: SpecifyInput): Promise<PhaseResult> {
  * @returns PhaseResult with success status
  */
 export async function createSpecManual(featureName: string): Promise<PhaseResult> {
-  // 1. Run artifact gate
+  // 1. Initialize database
+  const projectPath = process.cwd();
+  initDatabase(projectPath);
+  
+  // 2. Get or create feature
+  let feature = getFeature(featureName);
+  if (!feature) {
+    addFeature({
+      id: featureName,
+      name: featureName,
+      description: "Manual spec - description pending",
+    });
+    feature = getFeature(featureName);
+  }
+  
+  // 3. Run artifact gate
   const gateResult = await artifactGate("specify", featureName);
   
   if (!gateResult.passed) {
@@ -189,13 +228,13 @@ export async function createSpecManual(featureName: string): Promise<PhaseResult
     };
   }
   
-  // 2. Ensure directories exist
+  // 4. Ensure directories exist
   await ensureFeatureDirectories(featureName);
   
-  // 3. Generate template
+  // 5. Generate template
   const specContent = createSpecTemplate(featureName);
   
-  // 4. Write to file
+  // 6. Write to file
   const specPath = getArtifactPath(featureName, "spec");
   
   try {
@@ -206,6 +245,11 @@ export async function createSpecManual(featureName: string): Promise<PhaseResult
       error: `Failed to write spec.md: ${(error as Error).message}`,
     };
   }
+  
+  // 7. Update SQLite paths
+  updateFeaturePaths(featureName, {
+    specPath: specPath,
+  });
   
   return {
     success: true,

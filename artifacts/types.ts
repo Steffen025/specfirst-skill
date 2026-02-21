@@ -1,10 +1,11 @@
 /**
- * Artifact Types - SpecFirst 3.0
+ * Artifact Types - SpecFirst 4.0
  * 
  * Type definitions for all SpecFirst artifact structures.
+ * Updated for Algorithm v1.8.0 compatibility.
  * 
  * @module artifacts/types
- * @version 3.0.0
+ * @version 4.0.0
  */
 
 /**
@@ -173,18 +174,57 @@ export interface TasksArtifact {
   implementationNotes?: string;
 }
 
+/** Confidence tag indicating how the criterion was derived */
+export type ConfidenceTag = "E" | "I" | "R"; // Explicit, Inferred, Reverse-engineered
+
+/** Priority classification for criteria */
+export type PriorityLevel = "CRITICAL" | "IMPORTANT" | "NICE";
+
+/** Verification method category (Algorithm v1.8.0) */
+export type VerifyMethod = "CLI" | "Test" | "Static" | "Browser" | "Grep" | "Read" | "Custom";
+
+/** ISC criterion status — maps to Algorithm TaskCreate statuses */
+export type ISCStatus = "⬜" | "🔄" | "✅" | "❌";
+
+/** Algorithm TaskCreate status equivalents */
+export type TaskStatus = "pending" | "in_progress" | "completed" | "failed";
+
+/** Map ISC status symbols to Algorithm TaskCreate statuses */
+export const STATUS_MAP: Record<ISCStatus, TaskStatus> = {
+  "⬜": "pending",
+  "🔄": "in_progress",
+  "✅": "completed",
+  "❌": "failed",
+};
+
 export interface ISCCriterion {
-  id: number;
-  criterion: string;  // Exactly 8 words
-  status: "⬜" | "🔄" | "✅" | "❌";
+  id: number | string;  // Numeric or ISC-C{N} format
+  criterion: string;  // 8-12 words (Algorithm v1.8.0)
+  status: ISCStatus;
   evidence?: string;
   phase?: string;  // Implementation phase this belongs to
+  /** Inline verification method (Algorithm v1.8.0) — e.g. "CLI: bun test" */
+  verifyMethod?: string;
+  /** Verification method category */
+  verifyType?: VerifyMethod;
+  /** Confidence tag: [E]xplicit, [I]nferred, [R]everse-engineered */
+  confidence?: ConfidenceTag;
+  /** Priority classification */
+  priority?: PriorityLevel;
 }
 
 export interface AntiCriterion {
-  id: string;  // A1, A2, etc.
-  criterion: string;
+  id: string;  // ISC-A{N} format (was A1, A2, etc.)
+  criterion: string;  // 8-12 words (Algorithm v1.8.0)
   status: "👀" | "✅" | "❌";
+  /** Inline verification method (Algorithm v1.8.0) */
+  verifyMethod?: string;
+  /** Verification method category */
+  verifyType?: VerifyMethod;
+  /** Confidence tag */
+  confidence?: ConfidenceTag;
+  /** Priority classification */
+  priority?: PriorityLevel;
 }
 
 /**

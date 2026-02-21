@@ -54,25 +54,6 @@ describe("Configuration", () => {
       expect(config.workflowsDir).toBe("/test/.opencode/skills/SpecFirst/Workflows");
     });
 
-    it("should load Linear settings from environment", () => {
-      process.env.LINEAR_API_TOKEN = "test-token";
-      process.env.LINEAR_TEAM_ID = "test-team";
-      
-      const config = getConfig();
-      
-      expect(config.linearApiToken).toBe("test-token");
-      expect(config.linearTeamId).toBe("test-team");
-      expect(config.linearEnabled).toBe(true);
-    });
-
-    it("should disable Linear when no token provided", () => {
-      delete process.env.LINEAR_API_TOKEN;
-      
-      const config = getConfig();
-      
-      expect(config.linearEnabled).toBe(false);
-    });
-
     it("should load git configuration from environment", () => {
       process.env.SPECFIRST_AUTO_COMMIT = "false";
       process.env.SPECFIRST_BRANCH = "feature/test";

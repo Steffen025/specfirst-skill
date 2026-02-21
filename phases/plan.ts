@@ -15,6 +15,7 @@ import { generatePlan } from "../artifacts/plan";
 import { getArtifactPath, ensureFeatureDirectories } from "../lib/config";
 import { createPhaseCommit } from "../lib/git";
 import { artifactGate } from "../gates/artifact";
+import { initDatabase, getFeature, addFeature, updateFeaturePhase, updateFeaturePaths } from "../lib/database";
 
 export interface PlanInput {
   featureName: string;
@@ -109,7 +110,23 @@ export interface PhaseResult {
  */
 export async function planPhase(input: PlanInput): Promise<PhaseResult> {
   try {
-    // Step 1: Run artifact gate (checks spec.md exists)
+    // Step 1: Initialize database
+    console.log("💾 Initializing database...");
+    const projectPath = process.cwd();
+    initDatabase(projectPath);
+    
+    // Step 2: Get or create feature
+    let feature = getFeature(input.featureName);
+    if (!feature) {
+      addFeature({
+        id: input.featureName,
+        name: input.featureName,
+        description: input.executiveSummary,
+      });
+      feature = getFeature(input.featureName);
+    }
+    
+    // Step 3: Run artifact gate (checks spec.md exists)
     console.log("🚪 Running artifact gate for plan phase...");
     const gateResult = await artifactGate("plan", input.featureName);
     
@@ -121,11 +138,11 @@ export async function planPhase(input: PlanInput): Promise<PhaseResult> {
     }
     console.log("✅ Artifact gate passed\n");
     
-    // Step 2: Ensure feature directories exist
+    // Step 4: Ensure feature directories exist
     console.log("📁 Ensuring feature directories exist...");
     await ensureFeatureDirectories(input.featureName);
     
-    // Step 3: Read spec.md for context (optional verification)
+    // Step 5: Read spec.md for context (optional verification)
     const specPath = getArtifactPath(input.featureName, "spec");
     console.log(`📖 Reading spec.md from: ${specPath}`);
     
@@ -139,7 +156,7 @@ export async function planPhase(input: PlanInput): Promise<PhaseResult> {
       };
     }
     
-    // Step 4: Validate implementation phases have risks (Criterion 28)
+    // Step 6: Validate implementation phases have risks (Criterion 28)
     console.log("🔍 Validating implementation phases...");
     for (const phase of input.implementationPhases) {
       if (!phase.risks || phase.risks.length === 0) {
@@ -151,7 +168,7 @@ export async function planPhase(input: PlanInput): Promise<PhaseResult> {
     }
     console.log(`✅ All ${input.implementationPhases.length} phases have risk assessments\n`);
     
-    // Step 5: Generate plan content
+    // Step 7: Generate plan content
     console.log("📝 Generating plan.md content...");
     const planContent = generatePlan(
       input.featureName,
@@ -166,7 +183,7 @@ export async function planPhase(input: PlanInput): Promise<PhaseResult> {
     
     console.log(`✅ Generated plan with ${input.implementationPhases.length} phases\n`);
     
-    // Step 6: Write to file
+    // Step 8: Write to file
     const planPath = getArtifactPath(input.featureName, "plan");
     console.log(`💾 Writing plan.md to: ${planPath}`);
     
@@ -180,7 +197,14 @@ export async function planPhase(input: PlanInput): Promise<PhaseResult> {
       };
     }
     
-    // Step 7: Create git commit
+    // Step 9: Update SQLite: phase and paths
+    console.log("💾 Updating database state...");
+    updateFeaturePhase(input.featureName, "plan");
+    updateFeaturePaths(input.featureName, {
+      planPath: planPath,
+    });
+    
+    // Step 10: Create git commit (artifact only)
     console.log("📌 Creating git commit...");
     const gitResult = await createPhaseCommit("plan", input.featureName, planPath);
     

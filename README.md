@@ -20,18 +20,17 @@ SpecFirst enforces a disciplined approach to feature development:
 | Feature | Description |
 |---------|-------------|
 | **ISC-Native Tasks** | Generates exactly 8-word criteria that load into Algorithm ISC tracker |
-| **Linear Integration** | Optional milestone validation and status sync |
 | **Cross-Platform** | Works on OpenCode AND Claude Code |
 | **Git-Based State** | Commits mark phase completion, enables resumption |
 | **Validation Gates** | Prerequisite, Artifact, ISC Format, and Phase Completion gates |
+| **Database Layer** | SQLite-backed session tracking via `lib/database.ts` |
 
 ## Statistics
 
 - **~11.5k LOC** TypeScript
-- **68 source files** (excluding state)
+- **66 source files** (excluding state)
 - **5 validation gates**
 - **6 phases** (Propose → Specify → Plan → Implement → Validate → Release)
-- **4 integrations** (Linear status, milestones, offline mode, Algorithm)
 
 ## Architecture
 
@@ -39,9 +38,10 @@ SpecFirst enforces a disciplined approach to feature development:
 SpecFirst 3.0
 ├── algorithm/           # Algorithm integration (effort detection, ISC loading)
 ├── artifacts/           # Artifact generators (proposal, spec, plan, tasks)
+├── docs/                # API reference and user guide
 ├── gates/               # Validation gates (prerequisite, artifact, ISC format)
-├── integrations/        # Linear API, offline fallback
-├── lib/                 # Platform detection, config, git utilities
+├── integrations/        # Integration docs (IMPLEMENTATION_SUMMARY, ISC-VERIFICATION, README)
+├── lib/                 # Platform detection, config, git utilities, database
 ├── phases/              # Phase executors and orchestrator
 └── tests/               # Unit, integration, platform compatibility tests
 ```
@@ -136,4 +136,4 @@ MIT
 
 ---
 
-**Maintainer:** @Steffen025 + Jeremy (OpenCode/Claude Opus 4.5)
+**Maintainer:** @Steffen025 + Jeremy (OpenCode/Claude Opus 4.6)

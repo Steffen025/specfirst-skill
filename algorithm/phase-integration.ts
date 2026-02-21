@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Phase Integration Module - SpecFirst 3.0
+ * Phase Integration Module - SpecFirst 4.0
  * 
  * Maps SpecFirst phases to PAI Algorithm phases and determines when
  * SpecFirst can execute within the Algorithm workflow.
@@ -16,13 +16,15 @@
  * 
  * - Algorithm BUILD phase:
  *   - SpecFirst implement → Execute tasks from tasks.md
+ * 
+ * - Algorithm EXECUTE phase:
  *   - SpecFirst release → Deploy and verify
  * 
  * - Algorithm VERIFY phase:
  *   - SpecFirst verification → Check ISC criteria completion
  * 
  * @module algorithm/phase-integration
- * @version 3.0.0
+ * @version 4.0.0
  */
 
 export type SpecFirstPhase = "propose" | "specify" | "plan" | "implement" | "release";
@@ -52,16 +54,16 @@ const PHASE_MAP: Record<SpecFirstPhase, AlgorithmPhase> = {
   specify: "PLAN",    // Planning phase: Generate specification
   plan: "PLAN",       // Planning phase: Generate implementation plan
   implement: "BUILD", // Build phase: Execute implementation tasks
-  release: "BUILD",   // Build phase: Deploy and release
+  release: "EXECUTE", // Execute phase: Deploy and release (Algorithm v1.8.0: BUILD creates, EXECUTE deploys)
 };
 
 /**
  * Maps a SpecFirst phase to its corresponding Algorithm phase.
  * 
- * ISC #47: All SpecFirst phases execute within PLAN or BUILD phases
+ * ISC #47: All SpecFirst phases execute within PLAN or BUILD or EXECUTE phases
  * 
  * @param specFirstPhase - The SpecFirst phase to map
- * @returns The corresponding Algorithm phase (PLAN or BUILD)
+ * @returns The corresponding Algorithm phase (PLAN, BUILD, or EXECUTE)
  * 
  * @example
  * ```typescript
@@ -91,10 +93,11 @@ export function mapToAlgorithmPhase(specFirstPhase: string): AlgorithmPhase {
  * Execution rules:
  * - SpecFirst phases MUST execute in their mapped Algorithm phase
  * - propose/specify/plan execute in PLAN
- * - implement/release execute in BUILD
+ * - implement executes in BUILD
+ * - release executes in EXECUTE
  * - Execution in other phases (OBSERVE, THINK, VERIFY, LEARN) is not allowed
  * 
- * ISC #47: SpecFirst executes within Algorithm PLAN BUILD phases
+ * ISC #47: SpecFirst executes within Algorithm PLAN BUILD EXECUTE phases
  * 
  * @param specFirstPhase - The SpecFirst phase to check
  * @param currentAlgorithmPhase - The current Algorithm phase
@@ -203,7 +206,7 @@ export function checkPhaseCompatibility(
   const normalized = currentAlgorithmPhase.toUpperCase() as AlgorithmPhase;
   
   // SpecFirst executes in PLAN or BUILD phases only (ISC #47)
-  const compatiblePhases: AlgorithmPhase[] = ["PLAN", "BUILD"];
+  const compatiblePhases: AlgorithmPhase[] = ["PLAN", "BUILD", "EXECUTE"];
   
   if (compatiblePhases.includes(normalized)) {
     return {
@@ -318,32 +321,34 @@ if (import.meta.main) {
   console.log(`  implement/release blocked in PLAN: ${buildPhasesBlocked ? "✅ PASS" : "❌ FAIL"}`);
   console.log();
   
-  // Test 3: Execution permission in BUILD phase
+  // Test 3: Execution permission in BUILD phase (v4.0: only implement in BUILD)
   console.log("Test 3: Execution permission in BUILD phase");
-  const buildPhases = ["implement", "release"];
-  const buildAllowed = buildPhases.every(p => canExecuteInPhase(p, "BUILD"));
-  console.log(`  implement/release can execute in BUILD: ${buildAllowed ? "✅ PASS" : "❌ FAIL"}`);
+  const buildAllowed = canExecuteInPhase("implement", "BUILD");
+  console.log(`  implement can execute in BUILD: ${buildAllowed ? "✅ PASS" : "❌ FAIL"}`);
+  
+  const releaseBlockedInBuild = !canExecuteInPhase("release", "BUILD");
+  console.log(`  release blocked in BUILD (now in EXECUTE): ${releaseBlockedInBuild ? "✅ PASS" : "❌ FAIL"}`);
   
   const planPhasesBlocked = ["propose", "specify", "plan"].every(p => !canExecuteInPhase(p, "BUILD"));
   console.log(`  propose/specify/plan blocked in BUILD: ${planPhasesBlocked ? "✅ PASS" : "❌ FAIL"}`);
   console.log();
   
-  // Test 4: ISC Criterion Verification
+  // Test 4: ISC Criterion Verification (v4.0: PLAN/BUILD/EXECUTE)
   console.log("Test 4: ISC Criterion Verification");
   
-  // ISC #47: SpecFirst executes within Algorithm PLAN BUILD phases
-  const allInPlanOrBuild = phases.every(phase => {
+  // ISC #47: SpecFirst executes within Algorithm PLAN BUILD EXECUTE phases (v4.0)
+  const allInPlanBuildExecute = phases.every(phase => {
     const algPhase = mapToAlgorithmPhase(phase);
-    return algPhase === "PLAN" || algPhase === "BUILD";
+    return algPhase === "PLAN" || algPhase === "BUILD" || algPhase === "EXECUTE";
   });
-  console.log(`  ISC #47 (All phases in PLAN or BUILD): ${allInPlanOrBuild ? "✅ PASS" : "❌ FAIL"}`);
+  console.log(`  ISC #47 (All phases in PLAN/BUILD/EXECUTE): ${allInPlanBuildExecute ? "✅ PASS" : "❌ FAIL"}`);
   
   // Verify no execution in other phases
-  const otherPhases: AlgorithmPhase[] = ["OBSERVE", "THINK", "EXECUTE", "VERIFY", "LEARN"];
+  const otherPhases: AlgorithmPhase[] = ["OBSERVE", "THINK", "VERIFY", "LEARN"];
   const noExecInOther = otherPhases.every(algPhase =>
     phases.every(specPhase => !canExecuteInPhase(specPhase, algPhase))
   );
-  console.log(`  No execution in OBSERVE/THINK/EXECUTE/VERIFY/LEARN: ${noExecInOther ? "✅ PASS" : "❌ FAIL"}`);
+  console.log(`  No execution in OBSERVE/THINK/VERIFY/LEARN: ${noExecInOther ? "✅ PASS" : "❌ FAIL"}`);
   console.log();
   
   // Test 5: Phase compatibility check
@@ -360,7 +365,7 @@ if (import.meta.main) {
   console.log(`    Suggested phase: ${observeCompat.suggestedAlgorithmPhase}`);
   console.log();
   
-  // Test 6: Get executable phases for Algorithm phase
+  // Test 6: Get executable phases for Algorithm phase (v4.0: release moved to EXECUTE)
   console.log("Test 6: Executable phases per Algorithm phase");
   
   const planExec = getExecutablePhasesFor("PLAN");
@@ -370,8 +375,13 @@ if (import.meta.main) {
   
   const buildExec = getExecutablePhasesFor("BUILD");
   console.log(`  BUILD phase: ${buildExec.join(", ")}`);
-  const buildCorrect = buildExec.length === 2 && buildExec.includes("implement");
-  console.log(`    ${buildCorrect ? "✅ PASS - implement/release" : "❌ FAIL"}`);
+  const buildCorrect = buildExec.length === 1 && buildExec.includes("implement");
+  console.log(`    ${buildCorrect ? "✅ PASS - implement only (release moved to EXECUTE)" : "❌ FAIL"}`);
+  
+  const executeExec = getExecutablePhasesFor("EXECUTE");
+  console.log(`  EXECUTE phase: ${executeExec.join(", ")}`);
+  const executeCorrect = executeExec.length === 1 && executeExec.includes("release");
+  console.log(`    ${executeCorrect ? "✅ PASS - release" : "❌ FAIL"}`);
   
   const observeExec = getExecutablePhasesFor("OBSERVE");
   console.log(`  OBSERVE phase: ${observeExec.length > 0 ? observeExec.join(", ") : "none"}`);

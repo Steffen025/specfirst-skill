@@ -106,7 +106,7 @@ Timestamp: {ISO-8601}
 **ISC Coverage:** #25, #26, #27, #28
 
 Will create `spec.md` with:
-- Feature requirements (ISC criteria - 8 words each)
+- Feature requirements (ISC criteria - 8-12 words each)
 - User stories
 - API contracts
 - Data models
@@ -209,7 +209,7 @@ Timestamp: {ISO-8601}
 
 Creates `tasks.md` in ISC format from `plan.md`:
 - Extracts acceptance criteria from implementation phases
-- Converts to exactly 8-word ISC criteria
+- Converts to 8-12 word ISC criteria
 - Generates anti-criteria from risk matrix
 - Returns handoff message for Algorithm to load ISC tracker
 
